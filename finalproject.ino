@@ -1,12 +1,26 @@
-ledPin = 13
+int pot = A1;
+
+int lastPotVal;
+int currentPotVal;
+int mappedPot;
 
 void setup() {
-  // put your setup code here, to run once:
-  pinMode(ledPin, OUTPUT);
+  Serial.begin(9600);
 
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  checkPot();
 
+}
+
+void checkPot() {
+  lastPotVal = currentPotVal;
+  currentPotVal = (analogRead(pot));
+  mappedPot = map(currentPotVal, 1, 1023, -8192, 8191);
+
+  if (lastPotVal != currentPotVal) {
+    Serial.println(currentPotVal);
+    usbMIDI.sendPitchBend(mappedPot, 1);
+  }
 }
