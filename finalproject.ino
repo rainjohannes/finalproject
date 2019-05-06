@@ -1,34 +1,29 @@
-int stretch = A14;
-int bendToggle = 35;
-int modToggle = 34;
+int stretch = A14; // the stretch sensor
+int bendToggle = 35; // the toggle controlling direction of pitchbend
+int modToggle = 34; // the toggle to alternate between pitchbend and modulation
 
 int lastStretchVal;
 int currentStretchVal;
-int midiStretchVal;
 
-int lastBendVal;
-int currentBendVal;
+int delayTime = 8;
 
-int lastModVal;
-int currentModVal;
+int highReadVal = 410; // highest usable stretch sensor value
+int lowReadVal = 260; // lowest usable stretch sensor value
+int stepVal = 1;
 
-int highReadVal = 100;
-int lowReadVal = 50;
+int bendValUp; // mapped value for pitchbend up
+int bendValDown; // mapped value for pitchbend down
+int bendMax = 8191; // MIDI value for maximum pitchbend up
+int bendNone = 0; // MIDI value for no applied pitchbend
+int bendMin = -8192; // MIDI value for maximum pitchbend down
 
-int bendHigh = 8191;
-int bendLow = -8192;
-
-int modHigh = 127;
-int modLow = 0;
-
-int smoothTime = 1;
-unsigned long lastSmoothTime = millis();
+int modVal; // amount of modulation mapped to MIDI
+int modMax = 127; // MIDI value for maximum modulation
+int modMin = 0; // MIDI value for no applied modulation
 
 void setup() {
-  Serial.begin(9600);
-  pinMode(bendToggle, INPUT);
-  pinMode(modToggle, INPUT);
-
+  pinMode(bendToggle, INPUT); // use bendToggle as input
+  pinMode(modToggle, INPUT); // use modToggle as input
 }
 
 void loop() {
@@ -37,41 +32,63 @@ void loop() {
 }
 
 void checkStretch() {
-  //lastStretchVal = currentStretchVal;
-  //currentStretchVal = (analogRead(stretch));
-  //lastBendVal = currentBendVal;
-  //lastModVal = currentModVal;
+  lastStretchVal = currentStretchVal; // set lastStretchVal to value of stretch sensor as it was in the previous loop
+  delay(delayTime); // wait a little
+  currentStretchVal = (analogRead(stretch)); // update currentStretchVal to the present value of the stretch sensor
 
-  //if (millis() >= lastSmoothTime + smoothTime) {
-  //if ((currentStretchVal - lastStretchVal >= 4) || (lastStretchVal - currentStretchVal >= 4)) {
-  midiStretchVal = (analogRead(stretch));
-
-  if (midiStretchVal <= lowReadVal) {
-    currentBendVal = 0;
-    currentModVal = 0;
+  if (lastStretchVal == currentStretchVal) { // if the current raw value is the saw as it was the last time around...
+    return; // do nothing and start the loop again
   }
 
-  else if (midiStretchVal <= highReadVal) {
-    currentModVal = map(midiStretchVal, lowReadVal, highReadVal, modLow, modHigh);
-
-    if (digitalRead(bendToggle) == HIGH) {
-      currentBendVal = map(midiStretchVal, lowReadVal, highReadVal, 0, bendHigh);
+  else if (currentStretchVal <= lowReadVal) { // otherwise, if the currentStretchVal is below our readable threshold...
+    if (digitalRead(modToggle) == LOW) { // check if we're set to pitchbend. If so...
+      usbMIDI.sendPitchBend(bendNone, 1); // send a pitchbend value of 0
     }
 
-    else if (digitalRead(bendToggle) == LOW) {
-      currentBendVal = map(midiStretchVal, lowReadVal, highReadVal, 0, bendLow);
+    else if (digitalRead(modToggle) == HIGH) { // if we're set to modulation...
+      usbMIDI.sendControlChange(1, modMin, 1); // send a modulation value of 0
     }
+
+    return; // just to be safe, don't use the code below if currentStretchVal is below the readable threshold
+
   }
 
-  if (digitalRead(modToggle) == LOW) {
-    //Serial.println(currentBendVal);
-    usbMIDI.sendPitchBend(currentBendVal, 1);
+
+  else if (currentStretchVal <= highReadVal) {
+    // if current value is not equal to lastStretchVal, not lower than lowReadVal, and less than highReadVal
+
+    bendValUp = map(currentStretchVal, lowReadVal, highReadVal, bendNone, bendMax); //map currentStretchVal to upwards MIDI pitchbend values
+    bendValDown = map(currentStretchVal, lowReadVal, highReadVal, bendNone, bendMin); //map currentStretchVal to downwards MIDI pitchbend values
+    modVal = map(currentStretchVal, lowReadVal, highReadVal, modMin, modMax); //map currentStretchVal to MIDI modulation values
+
+    if (digitalRead(modToggle) == LOW) { //if modToggle is OFF:
+
+      if (digitalRead(bendToggle) == LOW) { // is bendToggle OFF?
+        if (currentStretchVal >= highReadVal) {
+          usbMIDI.sendPitchBend(bendMin, 1); //if currentStretchVal is over highReadVal, send bendMin
+        }
+
+        usbMIDI.sendPitchBend(bendValDown, 1); //if currentStretchVal is not over highReadVal, send bendValDown
+      }
+
+      else if (digitalRead(bendToggle) == HIGH) { // is bendToggle ON?
+        if (currentStretchVal >= highReadVal) {
+          usbMIDI.sendPitchBend(bendMax, 1); //if currentStretchVal is over highReadVal, send bendMax
+        }
+        
+        usbMIDI.sendPitchBend(bendValUp, 1); //if currentStretchVal is not over highReadVal, send bendValUp
+      }
+    }
+
+    else if (digitalRead(modToggle) == HIGH) { //If modToggle is ON:
+      if (currentStretchVal >= highReadVal) {
+        usbMIDI.sendControlChange(1, modMax, 1); //if currentStretchVal is over highReadVal, send modMin
+      }
+      
+      usbMIDI.sendControlChange(1, modVal, 1); //if currentStretchVal is not over highReadVal, send modVal
+
+    }
+
   }
 
-  else if (digitalRead(modToggle) == HIGH) {
-    //Serial.println(currentModVal);
-    usbMIDI.sendControlChange(1, currentModVal, 1);
-  }
-
-  //lastSmoothTime = millis();
 }
